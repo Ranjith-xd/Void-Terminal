@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Date Intelligence | Gaps Finder</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;700;800&family=JetBrains+Mono:wght@400;700&display=swap');
+    
+    body { 
+      font-family: 'Space Grotesk', sans-serif;
+      background-color: #ffffff;
+      color: #000000;
+      scroll-behavior: smooth;
+    }
+    
+    .bw-border { border: 3px solid #000000; }
+    .bw-shadow { box-shadow: 6px 6px 0px #000000; }
+    .bw-shadow-hover:hover { box-shadow: 10px 10px 0px #000000; transform: translate(-2px, -2px); }
+    .bw-shadow-active:active { transform: translate(2px, 2px); box-shadow: 0px 0px 0px #000000; }
+
+    #mainContent { opacity: 0; transition: opacity 0.5s ease; }
+    #result { opacity: 0; transform: translateY(10px); transition: all 0.4s ease; }
+    #result.show { opacity: 1; transform: translateY(0); }
+
+    .font-mono-data { font-family: 'JetBrains Mono', monospace; }
+
+    .results-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+    }
+    @media (min-width: 640px) {
+      .results-grid { grid-template-columns: repeat(4, 1fr); }
+    }
+
+    .grid-item {
+      background: #ffffff;
+      border-right: 3px solid #000;
+      border-bottom: 3px solid #000;
+      padding: 1.5rem 1rem;
+      text-align: center;
+      transition: all 0.2s ease;
+      min-height: 80px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .results-grid .grid-item:nth-child(2n) { border-right: none; }
+    @media (min-width: 640px) {
+      .results-grid .grid-item:nth-child(2n) { border-right: 3px solid #000; }
+      .results-grid .grid-item:nth-child(4n) { border-right: none; }
+    }
+
+    .date-found { font-weight: 800; font-size: 0.9rem; cursor: default; }
+
+    body.edit-mode-active .date-found { cursor: cell; background: #fffbeb; }
+    body.edit-mode-active .date-found.removed {
+      background: #fee2e2;
+      color: #ef4444;
+      text-decoration: line-through;
+      opacity: 0.6;
+    }
+
+    .void-item {
+      color: #e2e8f0; font-family: 'JetBrains Mono', monospace; font-size: 10px;
+      font-weight: 700; letter-spacing: 0.2em;
+      background-image: radial-gradient(#f1f5f9 1px, transparent 1px);
+      background-size: 6px 6px;
+    }
+
+    .floating-toolbar {
+      position: fixed; bottom: 2rem; left: 50%;
+      transform: translateX(-50%) translateY(150px);
+      transition: transform 0.5s cubic-bezier(0.19, 1, 0.22, 1);
+      z-index: 100;
+    }
+    .floating-toolbar.active { transform: translateX(-50%) translateY(0); }
+
+    #pageLoader { 
+      position: fixed; inset: 0; background: #000; 
+      display: flex; align-items: center; justify-content: center; 
+      z-index: 9999; transition: opacity 0.4s ease; 
+    }
+
+    /* Error Textarea State */
+    .textarea-error { background-color: #fef2f2 !important; border-color: #ef4444 !important; }
+  </style>
+</head>
+<body class="min-h-screen pb-32">
+
+  <div id="pageLoader">
+    <div class="text-white font-black tracking-tighter text-3xl italic animate-pulse">SYSTEM_CHECK...</div>
+  </div>
+
+  <div id="actionToolbar" class="floating-toolbar">
+    <div class="bg-white bw-border bw-shadow flex items-stretch p-2 gap-2">
+      <button id="editToggleBtn" onclick="toggleEditMode()" class="bg-white hover:bg-black hover:text-white border-2 border-black px-4 py-2 font-black text-[10px] uppercase tracking-tighter transition-all flex items-center gap-2">
+        <i class='bx bx-edit-alt'></i> <span id="editText">Edit_Mode</span>
+      </button>
+      
+      <button id="selectAllBtn" onclick="toggleSelectAll()" class="hidden bg-slate-100 hover:bg-black hover:text-white border-2 border-black px-4 py-2 font-black text-[10px] uppercase tracking-tighter transition-all flex items-center gap-2">
+        <i class='bx bx-check-double'></i> <span id="selectAllText">Select_All</span>
+      </button>
+
+      <div class="w-[2px] bg-slate-200 mx-1"></div>
+      
+      <button onclick="copyList()" class="bg-white hover:bg-black hover:text-white border-2 border-black px-4 py-2 font-black text-[10px] uppercase tracking-tighter transition-all flex items-center gap-2">
+        <i class='bx bx-copy-alt'></i> <span>Copy</span>
+      </button>
+      <button onclick="exportToCsv()" class="bg-black text-white hover:bg-white hover:text-black border-2 border-black px-4 py-2 font-black text-[10px] uppercase tracking-tighter transition-all flex items-center gap-2">
+        <i class='bx bx-download'></i> <span>CSV</span>
+      </button>
+      
+      <div class="w-[2px] bg-slate-200 mx-1"></div>
+      
+      <button onclick="scrollToTop()" title="Scroll to Top" class="bg-slate-100 hover:bg-black hover:text-white px-3 py-2 border-2 border-transparent transition-all">
+        <i class='bx bx-up-arrow-alt text-xl'></i>
+      </button>
+    </div>
+  </div>
+
+  <div id="mainContent" class="max-w-4xl mx-auto px-6 py-12 md:py-16">
+    <header class="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-4">
+      <div class="relative">
+        <div class="absolute -top-6 -left-2 text-[10px] font-bold bg-black text-white px-2 py-0.5 tracking-[0.3em]">SECURE_V4</div>
+        <h1 class="text-7xl font-[800] tracking-tighter leading-[0.85] uppercase">Timeline<br>Gaps.</h1>
+      </div>
+      <div class="flex flex-col items-end">
+        <p class="text-xs font-bold uppercase tracking-widest text-slate-400">Date Intelligence Unit</p>
+        <div class="h-1.5 w-32 bg-black mt-2"></div>
+      </div>
+    </header>
+
+    <div class="space-y-16">
+      <section class="space-y-4">
+        <div class="flex items-center justify-between">
+          <h2 class="font-black uppercase tracking-tighter text-2xl italic underline decoration-4 decoration-black underline-offset-4">01. Input_Data</h2>
+          <div id="formatBadge" class="hidden text-[10px] font-bold px-3 py-1 bg-black text-white rounded-full"></div>
+        </div>
+        
+        <div class="relative">
+          <textarea id="dateRange" rows="5" placeholder="PASTE DATA HERE (e.g. 12/01/2025)..." 
+            class="w-full bw-border p-6 text-xl font-bold focus:ring-0 focus:outline-none placeholder:text-slate-200 bg-slate-50/30 transition-all"></textarea>
+          <div id="inputFeedback" class="mt-2 text-[10px] font-bold text-red-500 hidden uppercase tracking-widest"></div>
+        </div>
+
+        <div id="rangeControls" class="hidden grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div class="md:col-span-1 bw-border p-4 bg-white cursor-pointer hover:bg-black hover:text-white transition-all group" onclick="openCalendar(startInput)">
+            <p class="text-[9px] font-bold text-slate-400 group-hover:text-slate-500 uppercase">Start_Bound</p>
+            <input id="startDate" readonly class="w-full bg-transparent font-bold text-sm pointer-events-none outline-none font-mono-data" />
+          </div>
+          <div class="md:col-span-1 bw-border p-4 bg-white cursor-pointer hover:bg-black hover:text-white transition-all group" onclick="openCalendar(endInput)">
+            <p class="text-[9px] font-bold text-slate-400 group-hover:text-slate-500 uppercase">End_Bound</p>
+            <input id="endDate" readonly class="w-full bg-transparent font-bold text-sm pointer-events-none outline-none font-mono-data" />
+          </div>
+          <button id="findBtn" class="md:col-span-1 bg-black text-white font-black uppercase tracking-widest text-xs bw-shadow-hover bw-shadow-active transition-all py-4">
+            SCAN_TIMELINE
+          </button>
+          <button id="resetBtn" class="md:col-span-1 bw-border font-black hover:bg-red-600 hover:text-white transition-colors py-4 text-xs tracking-widest uppercase">
+            CLEAR
+          </button>
+        </div>
+      </section>
+
+      <section id="resultWrapper" class="hidden space-y-6">
+        <div class="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b-8 border-black pb-6">
+          <div class="space-y-1">
+            <p class="text-xs font-black tracking-[0.4em] uppercase text-slate-400">Section_03</p>
+            <h2 class="text-5xl font-[900] tracking-tighter uppercase italic leading-none">Audit_Findings</h2>
+          </div>
+          <div id="countContainer"></div>
+        </div>
+
+        <div class="bw-border bg-white overflow-hidden">
+          <div id="result" class="results-grid"></div>
+        </div>
+      </section>
+
+      <div id="emptyState" class="py-24 border-[6px] border-black flex flex-col items-center justify-center bg-white relative">
+        <i class='bx bx-search-alt text-6xl mb-4 text-slate-100'></i>
+        <p class="font-black uppercase tracking-[0.5em] text-xs text-slate-300">Awaiting Sequence...</p>
+      </div>
+    </div>
+  </div>
+
+<script>
+  window.addEventListener('load', () => {
+    const loader = document.getElementById('pageLoader');
+    const main = document.getElementById('mainContent');
+    setTimeout(() => { 
+      loader.style.opacity = '0'; 
+      main.style.opacity = '1'; 
+      setTimeout(() => loader.remove(), 400);
+    }, 800);
+  });
+
+  const textarea = document.getElementById('dateRange');
+  const inputFeedback = document.getElementById('inputFeedback');
+  const controls = document.getElementById('rangeControls');
+  const resultWrapper = document.getElementById('resultWrapper');
+  const emptyState = document.getElementById('emptyState');
+  const resultEl = document.getElementById('result');
+  const startInput = document.getElementById('startDate');
+  const endInput = document.getElementById('endDate');
+  const findBtn = document.getElementById('findBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const formatBadge = document.getElementById('formatBadge');
+  const actionToolbar = document.getElementById('actionToolbar');
+  const selectAllBtn = document.getElementById('selectAllBtn');
+
+  let detectedFormat = null;
+  let isEditMode = false;
+  let allSelected = false;
+
+  textarea.addEventListener('input', handleRangeInput);
+  findBtn.addEventListener('click', findMissingDates);
+
+  resetBtn.addEventListener('click', () => {
+    textarea.value = ''; 
+    textarea.classList.remove('textarea-error');
+    inputFeedback.classList.add('hidden');
+    handleRangeInput();
+    resultWrapper.classList.add('hidden'); 
+    emptyState.classList.remove('hidden');
+    actionToolbar.classList.remove('active');
+    document.body.classList.remove('edit-mode-active');
+    isEditMode = false;
+    allSelected = false;
+    selectAllBtn.classList.add('hidden');
+  });
+
+  function scrollToTop() { window.scrollTo({ top: 0, behavior: 'smooth' }); }
+
+  function toggleEditMode() {
+    isEditMode = !isEditMode;
+    document.body.classList.toggle('edit-mode-active', isEditMode);
+    document.getElementById('editText').innerText = isEditMode ? 'Finish_Edit' : 'Edit_Mode';
+    const btn = document.getElementById('editToggleBtn');
+    if(isEditMode) {
+      btn.classList.replace('bg-white', 'bg-amber-400');
+      selectAllBtn.classList.remove('hidden');
+    } else {
+      btn.classList.replace('bg-amber-400', 'bg-white');
+      selectAllBtn.classList.add('hidden');
+    }
+  }
+
+  function toggleSelectAll() {
+    allSelected = !allSelected;
+    const items = document.querySelectorAll('.date-found');
+    items.forEach(item => {
+      if (allSelected) item.classList.add('removed');
+      else item.classList.remove('removed');
+    });
+    document.getElementById('selectAllText').innerText = allSelected ? 'Deselect_All' : 'Select_All';
+    updateGapCount();
+  }
+
+  function updateGapCount() {
+    const countSpan = document.querySelector('#countContainer span');
+    if (!countSpan) return;
+    const total = document.querySelectorAll('.date-found').length;
+    const removed = document.querySelectorAll('.date-found.removed').length;
+    countSpan.innerText = total - removed;
+  }
+
+  function getActiveGaps() {
+    const items = document.querySelectorAll('.date-found:not(.removed)');
+    return Array.from(items).map(i => i.textContent);
+  }
+
+  function copyList() {
+    const gaps = getActiveGaps();
+    if (gaps.length === 0) return;
+    navigator.clipboard.writeText(gaps.join('\n')).then(() => {
+      const btnSpan = document.querySelector('#actionToolbar button:nth-child(4) span');
+      const original = btnSpan.innerText;
+      btnSpan.innerText = 'COPIED!';
+      setTimeout(() => { btnSpan.innerText = original; }, 2000);
+    });
+  }
+
+  function exportToCsv() {
+    const gaps = getActiveGaps();
+    if (gaps.length === 0) return;
+    const csvContent = "data:text/csv;charset=utf-8,Missing Dates\n" + gaps.join("\n");
+    const link = document.createElement("a");
+    link.setAttribute("href", encodeURI(csvContent));
+    link.setAttribute("download", `Timeline_Audit.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  function openCalendar(input) {
+    const picker = document.createElement('input');
+    picker.type = 'date'; picker.style.position = 'absolute'; picker.style.opacity = 0;
+    document.body.appendChild(picker);
+    picker.addEventListener('change', () => {
+      if (picker.value) {
+        const [y, m, d] = picker.value.split('-');
+        input.value = detectedFormat === 'DMY' ? `${+d}/${+m}/${y}` : `${+m}/${+d}/${y}`;
+      }
+      document.body.removeChild(picker);
+    });
+    picker.focus(); picker.click();
+  }
+
+  function handleRangeInput() {
+    const lines = getLines();
+    textarea.classList.remove('textarea-error');
+    inputFeedback.classList.add('hidden');
+
+    if (lines.length >= 2) {
+      controls.classList.remove('hidden');
+      detectedFormat = detectBestFormat(lines[0], lines[lines.length - 1]);
+      formatBadge.textContent = detectedFormat === 'DMY' ? 'DD/MM/YY' : 'MM/DD/YY';
+      formatBadge.classList.remove('hidden');
+      
+      const start = parseDate(lines[0], detectedFormat);
+      const end = parseDate(lines[lines.length - 1], detectedFormat);
+      
+      if (start) startInput.value = formatDate(start, detectedFormat);
+      if (end) endInput.value = formatDate(end, detectedFormat);
+    } else {
+      controls.classList.add('hidden');
+      formatBadge.classList.add('hidden');
+    }
+  }
+
+  function getLines() { return textarea.value.replace(/\r/g, '').split('\n').map(l => l.trim()).filter(Boolean); }
+  function isValidDate(d) { return d instanceof Date && !isNaN(d.getTime()); }
+
+  function detectBestFormat(startStr, endStr) {
+    const dmyStart = parseDate(startStr, 'DMY'), dmyEnd = parseDate(endStr, 'DMY');
+    const mdyStart = parseDate(startStr, 'MDY'), mdyEnd = parseDate(endStr, 'MDY');
+    let dmySpan = Infinity, mdySpan = Infinity;
+    if (isValidDate(dmyStart) && isValidDate(dmyEnd) && dmyEnd >= dmyStart) dmySpan = dmyEnd - dmyStart;
+    if (isValidDate(mdyStart) && isValidDate(mdyEnd) && mdyEnd >= mdyStart) mdySpan = mdyEnd - mdyStart;
+    return dmySpan <= mdySpan ? 'DMY' : 'MDY';
+  }
+
+  function parseDate(input, format) {
+    if (!input || !input.includes('/')) return null;
+    const parts = input.split('/');
+    if (parts.length !== 3) return null;
+    
+    const [a, b, y] = parts.map(Number);
+    if (isNaN(a) || isNaN(b) || isNaN(y)) return null;
+
+    const day = format === 'DMY' ? a : b;
+    const month = format === 'DMY' ? b : a;
+    
+    // Strict validation for components
+    if (month < 1 || month > 12 || day < 1 || day > 31 || y < 1000) return null;
+    
+    const d = new Date(y, month - 1, day);
+    // Double check if JS auto-corrected the date (e.g. Feb 30 becomes March 2)
+    if (d.getFullYear() !== y || d.getMonth() !== month - 1 || d.getDate() !== day) return null;
+    
+    return isValidDate(d) ? d : null;
+  }
+
+  function formatDate(date, format) {
+    const d = date.getDate(), m = date.getMonth() + 1, y = date.getFullYear();
+    return format === 'DMY' ? `${d}/${m}/${y}` : `${m}/${d}/${y}`;
+  }
+
+  function findMissingDates() {
+    const lines = getLines();
+    const invalidLines = [];
+    
+    // 1. Check for malformed dates in the input
+    lines.forEach((line, index) => {
+      if (!parseDate(line, detectedFormat)) {
+        invalidLines.push(index + 1);
+      }
+    });
+
+    if (invalidLines.length > 0) {
+      textarea.classList.add('textarea-error');
+      inputFeedback.textContent = `MALFORMED INPUT ON LINE(S): ${invalidLines.join(', ')}`;
+      inputFeedback.classList.remove('hidden');
+      
+      resultWrapper.classList.remove('hidden');
+      emptyState.classList.add('hidden');
+      document.getElementById('countContainer').innerHTML = `
+        <div class="bg-red-600 text-white px-6 py-4 flex flex-col items-center bw-shadow">
+          <span class="text-3xl font-black">⚠️</span>
+          <span class="text-[8px] uppercase tracking-widest">Syntax</span>
+        </div>`;
+      resultEl.innerHTML = `<div class="col-span-full py-12 text-center font-black text-red-600 italic uppercase">DATA_CORRUPTION: Please fix line ${invalidLines[0]}</div>`;
+      actionToolbar.classList.remove('active');
+      setTimeout(() => resultEl.classList.add('show'), 50);
+      return;
+    }
+
+    // 2. Proceed to check bounds
+    resultWrapper.classList.remove('hidden'); emptyState.classList.add('hidden');
+    resultEl.innerHTML = ''; resultEl.classList.remove('show');
+    
+    const parsed = lines.map(l => parseDate(l, detectedFormat)).filter(Boolean);
+    const start = parseDate(startInput.value, detectedFormat);
+    const end = parseDate(endInput.value, detectedFormat);
+    
+    if (!isValidDate(start) || !isValidDate(end) || start > end) {
+      document.getElementById('countContainer').innerHTML = `
+        <div class="bg-red-600 text-white px-6 py-4 flex flex-col items-center bw-shadow">
+          <span class="text-3xl font-black">⚠️</span>
+          <span class="text-[8px] uppercase tracking-widest">Error</span>
+        </div>`;
+      resultEl.innerHTML = '<div class="col-span-full py-12 text-center font-black text-red-600 italic uppercase">BOUND_ERROR: Start bound exceeds end bound</div>';
+      actionToolbar.classList.remove('active');
+      setTimeout(() => resultEl.classList.add('show'), 50); return;
+    }
+
+    const existing = new Set(parsed.map(d => d.toDateString()));
+    const missing = []; let cur = new Date(start);
+    while (cur <= end) {
+      if (!existing.has(cur.toDateString())) missing.push(formatDate(cur, detectedFormat));
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    if (missing.length) {
+      actionToolbar.classList.add('active');
+      document.getElementById('countContainer').innerHTML = `
+        <div class="bg-black text-white px-6 py-4 flex flex-col items-center bw-shadow">
+          <span class="text-3xl font-black">${missing.length}</span>
+          <span class="text-[8px] uppercase tracking-widest">Gaps</span>
+        </div>`;
+      
+      missing.forEach(date => {
+        const item = document.createElement('div');
+        item.className = "grid-item date-found font-mono-data";
+        item.textContent = date;
+        item.onclick = function() {
+          if(isEditMode) {
+            this.classList.toggle('removed');
+            updateGapCount();
+          }
+        };
+        resultEl.appendChild(item);
+      });
+
+      const colCount = window.innerWidth >= 640 ? 4 : 2;
+      const remainder = colCount - (missing.length % colCount);
+      if (remainder < colCount) {
+        for(let i = 0; i < remainder; i++) {
+          const voidItem = document.createElement('div');
+          voidItem.className = "grid-item void-item";
+          voidItem.textContent = "SET(VOID)";
+          resultEl.appendChild(voidItem);
+        }
+      }
+
+      confetti({ particleCount: 60, spread: 70, origin: { y: 0.7 }, colors: ['#000000', '#cccccc'] });
+      setTimeout(() => resultWrapper.scrollIntoView({ behavior: 'smooth' }), 300);
+    } else {
+      actionToolbar.classList.remove('active');
+      document.getElementById('countContainer').innerHTML = `<div class="bg-white bw-border px-4 py-2 text-[10px] font-black">SECURE</div>`;
+      resultEl.innerHTML = '<div class="col-span-full py-20 text-center font-black text-slate-200 text-2xl italic tracking-[0.3em]">CONTINUITY_VERIFIED</div>';
+    }
+    setTimeout(() => resultEl.classList.add('show'), 50);
+  }
+</script>
+</body>
+</html>
